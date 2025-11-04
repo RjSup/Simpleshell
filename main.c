@@ -54,7 +54,7 @@ int parse_input(char *input, char *args[], int max_args) {
 }
 
 
-int main(int argc, char* argv[]) {
+int main(void) {
     char *input;
     char *args[MAX_ARGS];
     char cwd[PATH_MAX];
@@ -203,6 +203,7 @@ int main(int argc, char* argv[]) {
                 waitpid(pid, &status, 0);
             } else {
                 printf("[background pid: %d]\n", pid);
+                fflush(stdout);
             }
         } else {
             perror("fork");
