@@ -36,7 +36,7 @@ int parse_input(char *input, char *args[], int max_args) {
             // If closing quote found, replace it with null terminator to end the argument
             if (*p)
                 *p++ = '\0';
-            while(*p == ' ' || *p == 't') p++;
+            while(*p == ' ' || *p == '\t') p++;
         } else {
             // Argument is not quoted
             args[i++] = p;       // The argument starts here
@@ -133,7 +133,7 @@ int main(int argc, char* argv[]) {
         int syntax_error = 0;
 
         for(int i = 0; args[i] != NULL; i++) {
-            if(strcmp(args[i], ">") == 0 && args[i+1]) {
+            if(strcmp(args[i], ">") == 0 ) {
                 if(args[i+1] == NULL) {
                     fprintf(stderr, "No file for ouput redirect\n");
                     syntax_error = 1;
@@ -143,7 +143,7 @@ int main(int argc, char* argv[]) {
                 append = 0;
                 i++;
             }
-            else if(strcmp(args[i], ">>") == 0 && args[i+1]) {
+            else if(strcmp(args[i], ">>") == 0) {
                 if(args[i+1] == NULL) {
                     fprintf(stderr, "No file for output redirect\n");
                     syntax_error = 1;
@@ -153,7 +153,7 @@ int main(int argc, char* argv[]) {
                 append = 1;
                 i++;
             }
-            else if(strcmp(args[i], "<") == 0 && args[i+1]) {
+            else if(strcmp(args[i], "<") == 0) {
                 if(args[i+1] == NULL) {
                     fprintf(stderr, "No file for input redirect\n");
                     syntax_error = 1;
@@ -167,6 +167,11 @@ int main(int argc, char* argv[]) {
             }
         }
         cmd_args[cmd_argc] = NULL;
+
+        if(syntax_error) {
+            free(input);
+            continue;
+        }
 
         // fork and execute
         pid_t pid = fork();
@@ -203,10 +208,7 @@ int main(int argc, char* argv[]) {
             perror("fork");
         }
 
-        if(syntax_error) {
-            free(input);
-            continue;
-        }
+        free(input);
     }
 
     printf("Cya!\n");
