@@ -3,12 +3,16 @@
 #include <string.h>
 #include <sys/fcntl.h>
 #include <sys/syslimits.h>
+#include <limits.h>
+#include <sys/fcntl.h>
 #include <unistd.h>
 #include <fcntl.h>
 #include <sys/wait.h>
+#include <signal.h>
 #include <readline/readline.h>
 #include <readline/history.h>
 
+#define MAX_ARGS 64
 
 int parse_input(char *input, char *args[], int max_args) {
     int i = 0;              // Counter for how many arguments have been parsed
@@ -16,35 +20,29 @@ int parse_input(char *input, char *args[], int max_args) {
 
     // Continue parsing until the end of the string or we reach the max number of arguments
     while (*p && i < max_args - 1) {
-
         // Skip any leading spaces or tabs before the next argument
         while (*p == ' ' || *p == '\t')
             p++;
-
         // If we reach the end of the string after skipping spaces, stop parsing
         if (*p == '\0')
             break;
-
         // Check if the argument starts with a quote (single or double)
         if (*p == '"' || *p == '\'') {
             char quote = *p++;   // Remember which quote type and move past it
             args[i++] = p;       // The argument starts here
-
             // Move pointer until we find the matching closing quote
             while (*p && *p != quote)
                 p++;
-
             // If closing quote found, replace it with null terminator to end the argument
             if (*p)
                 *p++ = '\0';
+            while(*p == ' ' || *p == 't') p++;
         } else {
             // Argument is not quoted
             args[i++] = p;       // The argument starts here
-
             // Move pointer until we hit a space, tab, or a quote
             while (*p && *p != ' ' && *p != '\t' && *p != '"' && *p != '\'')
                 p++;
-
             // If we hit a delimiter, replace it with null terminator to end the argument
             if (*p)
                 *p++ = '\0';
@@ -58,7 +56,7 @@ int parse_input(char *input, char *args[], int max_args) {
 
 int main(int argc, char* argv[]) {
     char *input;
-    char *args[64];
+    char *args[MAX_ARGS];
     char cwd[PATH_MAX];
 
     while(1) {
@@ -75,12 +73,11 @@ int main(int argc, char* argv[]) {
         if(!input) break;  // Ctrl+D exits
 
         if(*input) add_history(input);
-
         // remove newline from input
         input[strcspn(input, "\n")] = '\0';
 
         // parse input into args
-        int argc = parse_input(input, args, 64);
+        int arg_count = parse_input(input, args, 64);
 
         // Skip empty input or no first argument
         if(strlen(input) == 0 || args[0] == NULL) {
@@ -122,28 +119,50 @@ int main(int argc, char* argv[]) {
 
         // check background process
         int background = 0;
-        if(argc > 0 && strcmp(args[argc - 1], "&") == 0) {
+        if(arg_count > 0 && strcmp(args[arg_count - 1], "&") == 0) {
             background = 1;
-            args[argc - 1] = NULL;
+            args[arg_count - 1] = NULL;
         }
 
         // handle redirection
-        char *cmd_args[64];
+        char *cmd_args[MAX_ARGS];
         char *outfile = NULL;
+        char *infile = NULL;
         int append = 0;
         int cmd_argc = 0;
+        int syntax_error = 0;
 
         for(int i = 0; args[i] != NULL; i++) {
             if(strcmp(args[i], ">") == 0 && args[i+1]) {
+                if(args[i+1] == NULL) {
+                    fprintf(stderr, "No file for ouput redirect\n");
+                    syntax_error = 1;
+                    break;
+                }
                 outfile = args[i+1];
                 append = 0;
                 i++;
             }
             else if(strcmp(args[i], ">>") == 0 && args[i+1]) {
+                if(args[i+1] == NULL) {
+                    fprintf(stderr, "No file for output redirect\n");
+                    syntax_error = 1;
+                    break;
+                }
                 outfile = args[i+1];
                 append = 1;
                 i++;
-            } else {
+            }
+            else if(strcmp(args[i], "<") == 0 && args[i+1]) {
+                if(args[i+1] == NULL) {
+                    fprintf(stderr, "No file for input redirect\n");
+                    syntax_error = 1;
+                    break;
+                }
+                infile = args[i+1];
+                i++;
+            }
+            else {
                 cmd_args[cmd_argc++] = args[i];
             }
         }
@@ -152,6 +171,15 @@ int main(int argc, char* argv[]) {
         // fork and execute
         pid_t pid = fork();
         if(pid == 0) {
+            if(infile) {
+                int fd_in = open(infile, O_RDONLY);
+                if(fd_in < 0) {
+                    perror("open input");
+                    exit(1);
+                }
+                dup2(fd_in, STDIN_FILENO);
+                close(fd_in);
+            }
             if(outfile) {
                 int fd = open(outfile, O_WRONLY | O_CREAT | (append ? O_APPEND : O_TRUNC), 0644);
                 if(fd < 0) {
@@ -175,7 +203,10 @@ int main(int argc, char* argv[]) {
             perror("fork");
         }
 
-        free(input);  // free only once per loop iteration
+        if(syntax_error) {
+            free(input);
+            continue;
+        }
     }
 
     printf("Cya!\n");
